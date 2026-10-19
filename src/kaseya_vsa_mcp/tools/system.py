@@ -21,7 +21,7 @@ from ._common import READ_ONLY, ClientFactory, ODataFilter, Skip, Top, fetch, ru
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
-    async def kaseya_vsa_list_organizations(top: Top = 250, filter: ODataFilter = None, skip: Skip = None) -> str:
+    async def kaseya_vsa_list_organizations(top: Top = 50, filter: ODataFilter = None, skip: Skip = None) -> str:
         """List organizations: id, name, type, parent, contact details."""
 
         async def action(client: VsaClient) -> dict:
@@ -30,7 +30,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("kaseya_vsa_list_organizations", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def kaseya_vsa_list_machine_groups(top: Top = 250, filter: ODataFilter = None, skip: Skip = None) -> str:
+    async def kaseya_vsa_list_machine_groups(top: Top = 50, filter: ODataFilter = None, skip: Skip = None) -> str:
         """List machine groups (the organization -> group hierarchy agents belong to)."""
 
         async def action(client: VsaClient) -> dict:

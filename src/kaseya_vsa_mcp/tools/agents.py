@@ -19,7 +19,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import VsaClient, VsaError
-from ._common import READ_ONLY, AgentId, ClientFactory, ODataFilter, Skip, Top, fetch, result, rows_of, run_tool
+from ._common import READ_ONLY, AgentId, ClientFactory, ODataFilter, SingleCallTop, Skip, Top, fetch, result, rows_of, run_tool
 
 SoftwareView = Literal["installed", "add_remove", "licenses", "security", "startup"]
 _SOFTWARE = {
@@ -34,7 +34,7 @@ _HARDWARE = {"disk_volumes": "hardware/diskvolumes", "pci_and_disk": "hardware/p
 
 def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
-    async def kaseya_vsa_list_agents(filter: ODataFilter = None, top: Top = 100, skip: Skip = None) -> str:
+    async def kaseya_vsa_list_agents(filter: ODataFilter = None, top: Top = 50, skip: Skip = None) -> str:
         """List agents (managed endpoints): name, machine group, OS, IP, online state, last check-in."""
 
         async def action(client: VsaClient) -> dict:
@@ -55,7 +55,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     async def kaseya_vsa_get_software_inventory(
         agentId: AgentId,
         view: Annotated[SoftwareView, Field(description="installed applications (default), add/remove programs, licenses, security products or startup apps.")] = "installed",
-        top: Top = 500,
+        top: SingleCallTop = 50,
     ) -> str:
         """Get an agent's software from its latest audit: installed apps, licenses, security products."""
 

@@ -91,6 +91,19 @@ def test_endpoint_actions_need_confirm(tools, name):
     assert "explicitly ask" in tools[name].description
 
 
+@pytest.mark.parametrize("name", sorted(n for n, p in UPSTREAM_PARAMS.items() if "top" in p))
+def test_paged_lists_cap_top_at_200(tools, name):
+    top = tools[name].inputSchema["properties"]["top"]
+    assert top["maximum"] == 200
+    assert top["default"] == 50
+
+
+def test_software_inventory_keeps_top_500(tools):
+    top = tools["kaseya_vsa_get_software_inventory"].inputSchema["properties"]["top"]
+    assert "maximum" not in top  # larger values are cut to 500 in code, as before
+    assert top["default"] == 50
+
+
 def test_instructions_budget():
     assert len(INSTRUCTIONS) <= 1500
     assert "\n" in INSTRUCTIONS

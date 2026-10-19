@@ -49,7 +49,10 @@ def compact(values: dict[str, Any]) -> dict[str, Any]:
 
 
 MAX_TOTAL = 500
-Top = Annotated[int, Field(description=f"Records to return (up to {MAX_TOTAL}; fetched 100 per request).", ge=1)]
+MAX_TOP = 200
+Top = Annotated[int, Field(description=f"Records to return (default 50, max {MAX_TOP}; fetched 100 per request).", ge=1, le=MAX_TOP)]
+# For tools without skip: one call is all the caller gets, so they keep the larger maximum.
+SingleCallTop = Annotated[int, Field(description=f"Records to return (default 50, up to {MAX_TOTAL}; fetched 100 per request).", ge=1)]
 Skip = Annotated[int | None, Field(description="Records to skip.", ge=0)]
 
 

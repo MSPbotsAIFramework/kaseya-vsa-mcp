@@ -36,7 +36,7 @@ is missing; a non-https URL gets HTTP 400.
 
 ## Tools
 
-All tools return a JSON string. Lists take an OData `filter`, `top` (up to 500, read 100 per
+All tools return a JSON string. Lists take an OData `filter`, `top` (default 50, max 200, read 100 per
 request) and `skip`, and return `{count, total, has_more, next_skip}`. **confirm** marks tools
 that change the endpoint and need `confirm: true`.
 
@@ -123,6 +123,9 @@ uv run pytest
   Agent procedures must be approved in VSA before they can run.
 - **Lists** are no longer narrowed by an interactive prompt when no filter is given; `top` above
   100 is read in pages of 100.
+- **Result size exception (SOP 2.5).** `kaseya_vsa_get_software_inventory` has no paging (no
+  `skip`), so it keeps a maximum of 500 (default 50); results are still cut to 20,000 characters
+  with a truncation notice.
 - **Not included**: the device "card" UI resource of older versions (an MCP Apps HTML view); the
   tools return the same data as JSON.
 

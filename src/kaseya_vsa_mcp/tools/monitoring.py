@@ -26,7 +26,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def kaseya_vsa_list_alarms(
         filter: ODataFilter = None,
-        top: Top = 100,
+        top: Top = 50,
         include_closed: Annotated[bool, Field(description="Also return closed alarms (default: open alarms only).")] = False,
         skip: Skip = None,
     ) -> str:
@@ -41,7 +41,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def kaseya_vsa_list_tickets(
         filter: ODataFilter = None,
-        top: Top = 100,
+        top: Top = 50,
         service_desk_id: Annotated[str | None, Field(description="Read this Service Desk's tickets instead of the Ticketing module's.")] = None,
         skip: Skip = None,
     ) -> str:

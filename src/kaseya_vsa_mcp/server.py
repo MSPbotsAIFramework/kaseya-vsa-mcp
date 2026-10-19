@@ -51,7 +51,7 @@ INSTRUCTIONS = (
     "- Inventory: kaseya_vsa_get_software_inventory / _get_hardware_inventory; "
     "patches: kaseya_vsa_get_patch_status.\n"
     "- Problems: kaseya_vsa_list_alarms (open by default), kaseya_vsa_list_tickets.\n"
-    "- Lists take an OData filter, top (max 100) and skip.\n"
+    "- Lists take an OData filter, top (default 50, max 200) and skip.\n"
     "kaseya_vsa_deploy_patches_now and kaseya_vsa_run_procedure change the "
     "endpoint: they need confirm: true after the user approved that exact "
     "action. Agent procedures must be approved in VSA before they can run."
