@@ -85,7 +85,10 @@ async def fetch(client: VsaClient, path: str, key: str, top: int, skip: int | No
         if len(page) < size or (total is not None and offset >= total):
             break
     more = (total is not None and offset < total) or (total is None and len(rows) >= wanted)
-    return compact({key: rows, "count": len(rows), "total": total, "has_more": more, "next_skip": offset if more else None})
+    out = compact({key: rows, "count": len(rows), "total": total, "has_more": more, "next_skip": offset if more else None})
+    # VSA accepts any $skip, so the size cap can continue right after the last row it returns.
+    out["_resume"] = {"key": "next_skip", "start": skip or 0}
+    return out
 
 
 def not_confirmed(action: str) -> dict:
