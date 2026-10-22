@@ -247,3 +247,135 @@ async def test_get_retries_5xx_but_puts_do_not():
     with pytest.raises(VsaError):
         await client.put("assetmgmt/patch/runnow", {})
     assert len(rec.calls("assetmgmt/agents")) == 2 and len(rec.calls("assetmgmt/patch/runnow")) == 1
+
+
+
+# ---- PRD-21070: tools that return next_skip take skip ------------------------------------------------
+# Checklist: no skip sends the same request as before; skip goes to $skip; a cut page continues at
+# skip + returned; walking next_skip returns every row once; skip past the end is empty; every tool
+# whose result can carry next_skip declares skip (FastMCP drops undeclared arguments silently).
+
+AGENT = "100633166984279"
+
+
+def _odata(rows):
+    """VSA OData collection: honours $top / $skip and reports TotalRecords."""
+
+    def reply(request):
+        top = int(request.url.params.get("$top", 100))
+        skip = int(request.url.params.get("$skip", 0))
+        return httpx.Response(200, json=ok(rows[skip : skip + top], TotalRecords=len(rows)))
+
+    return reply
+
+
+def _wide(prefix, n):
+    return [{"Id": f"{prefix}{i:05d}", "Name": f"{prefix} {i}", **{f"F{k}": f"value {k}" for k in range(40)}} for i in range(n)]
+
+
+SKIP_TOOLS = [
+    ("kaseya_vsa_get_software_inventory", f"assetmgmt/audit/{AGENT}/software/installedapplications", "software",
+     {"agentId": AGENT, "view": "installed", "top": 200}),
+    ("kaseya_vsa_list_procedures", "automation/agentprocs", "procedures", {"agentId": AGENT}),
+    ("kaseya_vsa_get_patch_status", f"assetmgmt/patch/{AGENT}/machineupdate/False", "missing_patches", {"agentId": AGENT}),
+]
+
+
+def _routes(path, rows):
+    return {path: _odata(rows), f"assetmgmt/patch/{AGENT}/status": ok({"Missing": len(rows)}),
+            f"automation/agentprocs/{AGENT}/scheduledprocs": ok([{"Id": "sched-1"}])}
+
+
+@pytest.mark.parametrize("tool,path,key,args", SKIP_TOOLS)
+async def test_cut_pages_walked_by_next_skip_return_every_row_once(monkeypatch, tool, path, key, args):
+    rows = _wide("r", 1234)
+    rec = Recorder(_routes(path, rows))
+    ids, cut, calls, call_args = [], 0, 0, dict(args)
+    while True:
+        out = await _call(monkeypatch, rec, tool, call_args)
+        calls += 1
+        assert "retry_page_size" not in out
+        cut += bool(out.get("truncated"))
+        ids += [r["Id"] for r in out[key]]
+        if out.get("next_skip") is None:
+            break
+        call_args = args | {"skip": out["next_skip"]}
+        assert calls < 300
+    assert cut > 0  # pages really were cut
+    assert ids == [r["Id"] for r in rows]  # no gaps, no duplicates, nothing looped on page 1
+
+
+@pytest.mark.parametrize("tool,path,key,args", SKIP_TOOLS)
+async def test_skip_changes_the_page(monkeypatch, tool, path, key, args):
+    rows = [{"Id": f"r{i:05d}"} for i in range(1000)]
+    rec = Recorder(_routes(path, rows))
+    first = await _call(monkeypatch, rec, tool, args)
+    later = await _call(monkeypatch, rec, tool, args | {"skip": 300})
+    assert first[key][0]["Id"] == "r00000" and later[key][0]["Id"] == "r00300"
+    assert "$skip" not in rec.calls(path)[0].url.params  # no skip: the same request as before
+    assert any(r.url.params.get("$skip") == "300" for r in rec.calls(path))
+
+
+@pytest.mark.parametrize("tool,path,key,args", SKIP_TOOLS)
+async def test_skip_past_the_end_is_empty(monkeypatch, tool, path, key, args):
+    rec = Recorder(_routes(path, [{"Id": f"r{i}"} for i in range(40)]))
+    out = await _call(monkeypatch, rec, tool, args | {"skip": 500})
+    assert (out[key], out["has_more"], out.get("next_skip")) == ([], False, None)
+
+
+async def test_procedures_default_request_is_unchanged_and_keeps_scheduled(monkeypatch):
+    rec = Recorder(_routes("automation/agentprocs", [{"Id": f"p{i}"} for i in range(30)]))
+    out = await _call(monkeypatch, rec, "kaseya_vsa_list_procedures", {"agentId": AGENT})
+    assert [r.url.params["$top"] for r in rec.calls("automation/agentprocs")] == ["100"]
+    assert out["count"] == 30 and out["scheduled_on_agent"] == [{"Id": "sched-1"}]
+
+
+async def test_every_tool_that_can_return_next_skip_declares_skip():
+    # fetch() always reports next_skip; a tool without a skip parameter would make callers loop on page 1.
+    import inspect
+    import re
+
+    from kaseya_vsa_mcp.tools import agents, automation, monitoring, system
+
+    tools = {t.name: t for t in await create_mcp_server().list_tools()}
+    for module in (agents, automation, monitoring, system):
+        source = inspect.getsource(module)
+        for name, body in re.findall(r"async def (kaseya_vsa_\w+)\((.*?)return await run_tool", source, re.S):
+            if "fetch(client" in body:
+                assert "skip" in tools[name].inputSchema["properties"], name
+
+
+# ---- PRD-21071: licence keys masked by default ---------------------------------------------------------
+
+
+LICENSES = [
+    {"ProductName": "Internet Explorer", "ProductKey": "GMJ3N-ABCDE-FGHIJ-KLMNO-PQRST", "LicenseCode": "LC-1234567890ABC"},
+    {"ProductName": "Short", "ProductKey": "AB12", "LicenseCode": None, "licenseKey": ""},
+]
+
+
+async def test_licence_keys_are_masked_unless_asked_for(monkeypatch):
+    rec = Recorder({f"assetmgmt/audit/{AGENT}/software/licenses": _odata(LICENSES)})
+    out = await _call(monkeypatch, rec, "kaseya_vsa_get_software_inventory", {"agentId": AGENT, "view": "licenses"})
+    first, short = out["software"]
+    assert out["keys_masked"] is True
+    assert first["ProductKey"] == "*****PQRST" and first["LicenseCode"] == "*****90ABC"
+    assert short["ProductKey"] == "*****"  # too short to show any of it
+    assert "LicenseCode" not in short or short["LicenseCode"] is None
+    assert first["ProductName"] == "Internet Explorer"
+    full = await _call(monkeypatch, rec, "kaseya_vsa_get_software_inventory", {"agentId": AGENT, "view": "licenses", "showKeys": True})
+    assert full["software"][0]["ProductKey"] == "GMJ3N-ABCDE-FGHIJ-KLMNO-PQRST" and "keys_masked" not in full
+
+
+async def test_other_software_views_are_not_masked(monkeypatch):
+    rows = [{"ProductName": "App", "ProductKey": "GMJ3N-ABCDE-FGHIJ-KLMNO-PQRST"}]
+    rec = Recorder({f"assetmgmt/audit/{AGENT}/software/installedapplications": _odata(rows)})
+    out = await _call(monkeypatch, rec, "kaseya_vsa_get_software_inventory", {"agentId": AGENT})
+    assert out["software"][0]["ProductKey"] == "GMJ3N-ABCDE-FGHIJ-KLMNO-PQRST" and "keys_masked" not in out
+
+
+async def test_filter_description_shows_the_decimal_id_suffix():
+    tools = {t.name: t for t in await create_mcp_server().list_tools()}
+    description = tools["kaseya_vsa_list_agents"].inputSchema["properties"]["filter"]
+    text = json.dumps(description)
+    assert "OrgId eq 10158420681076233316854711M" in text

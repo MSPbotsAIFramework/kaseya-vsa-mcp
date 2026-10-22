@@ -19,7 +19,19 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..api_client import VsaClient, VsaError
-from ._common import DESTRUCTIVE, READ_ONLY, AgentId, ClientFactory, Confirm, fetch, not_confirmed, rows_of, run_tool
+from ._common import (
+    DESTRUCTIVE,
+    MAX_TOTAL,
+    READ_ONLY,
+    AgentId,
+    ClientFactory,
+    Confirm,
+    Skip,
+    fetch,
+    not_confirmed,
+    rows_of,
+    run_tool,
+)
 
 ProcedureId = Annotated[str, Field(description="Agent procedure id (from kaseya_vsa_list_procedures).", min_length=1)]
 
@@ -41,11 +53,18 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("kaseya_vsa_deploy_patches_now", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def kaseya_vsa_list_procedures(agentId: AgentId) -> str:
-        """List agent procedures that can be run, plus the ones already scheduled on this agent."""
+    async def kaseya_vsa_list_procedures(
+        agentId: AgentId,
+        top: Annotated[int, Field(description=f"Procedures to return (default {MAX_TOTAL}, up to {MAX_TOTAL}).", ge=1)] = MAX_TOTAL,
+        skip: Skip = None,
+    ) -> str:
+        """List agent procedures that can be run, plus the ones already scheduled on this agent.
+
+        skip (next_skip) continues the procedure list.
+        """
 
         async def action(client: VsaClient) -> dict:
-            available = await fetch(client, "automation/agentprocs", "procedures", 500)
+            available = await fetch(client, "automation/agentprocs", "procedures", top, skip)
             try:
                 scheduled = rows_of(await client.get(f"automation/agentprocs/{agentId}/scheduledprocs", {"$top": 100}))
             except VsaError as e:

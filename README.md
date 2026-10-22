@@ -37,17 +37,21 @@ is missing; a non-https URL gets HTTP 400.
 ## Tools
 
 All tools return a JSON string. Lists take an OData `filter`, `top` (default 50, max 200, read 100 per
-request) and `skip`, and return `{count, total, has_more, next_skip}`. **confirm** marks tools
-that change the endpoint and need `confirm: true`.
+request) and `skip`, and return `{count, total, has_more, next_skip}`; pass `next_skip` as `skip`
+to continue (when a result is cut to fit the size limit it starts right after the last record
+returned). Every tool that returns `next_skip` takes `skip`. Ids such as `OrgId` are decimals: filter
+with an `M` suffix, e.g. `OrgId eq 10158420681076233316854711M`. The software `licenses` view masks
+product keys and license codes to their last 5 characters unless `showKeys: true`. **confirm** marks
+tools that change the endpoint and need `confirm: true`.
 
 | Area | Tools |
 |---|---|
 | Agents | `kaseya_vsa_list_agents` (filter, top, skip), `kaseya_vsa_get_agent` (**agentId**) |
-| Audit | `kaseya_vsa_get_software_inventory` (**agentId**, view: installed, add_remove, licenses, security, startup), `kaseya_vsa_get_hardware_inventory` (**agentId**) |
-| Patches | `kaseya_vsa_get_patch_status` (**agentId**); **confirm**: `kaseya_vsa_deploy_patches_now` (**agentId**) |
-| Procedures | `kaseya_vsa_list_procedures` (**agentId**); **confirm**: `kaseya_vsa_run_procedure` (**agentId**, **procedureId**) |
-| Monitoring | `kaseya_vsa_list_alarms` (filter, top, include_closed), `kaseya_vsa_list_tickets` (filter, top, service_desk_id) |
-| System | `kaseya_vsa_list_organizations` (top, filter), `kaseya_vsa_list_machine_groups` (top, filter) |
+| Audit | `kaseya_vsa_get_software_inventory` (**agentId**, view: installed, add_remove, licenses, security, startup, top, skip, showKeys), `kaseya_vsa_get_hardware_inventory` (**agentId**) |
+| Patches | `kaseya_vsa_get_patch_status` (**agentId**, skip); **confirm**: `kaseya_vsa_deploy_patches_now` (**agentId**) |
+| Procedures | `kaseya_vsa_list_procedures` (**agentId**, top, skip); **confirm**: `kaseya_vsa_run_procedure` (**agentId**, **procedureId**) |
+| Monitoring | `kaseya_vsa_list_alarms` (filter, top, skip, include_closed), `kaseya_vsa_list_tickets` (filter, top, skip, service_desk_id) |
+| System | `kaseya_vsa_list_organizations` (top, skip, filter), `kaseya_vsa_list_machine_groups` (top, skip, filter) |
 
 Errors come back as a JSON envelope instead of an exception:
 
@@ -123,9 +127,9 @@ uv run pytest
   Agent procedures must be approved in VSA before they can run.
 - **Lists** are no longer narrowed by an interactive prompt when no filter is given; `top` above
   100 is read in pages of 100.
-- **Result size exception (SOP 2.5).** `kaseya_vsa_get_software_inventory` has no paging (no
-  `skip`), so it keeps a maximum of 500 (default 50); results are still cut to 20,000 characters
-  with a truncation notice.
+- **Result size exception (SOP 2.5).** `kaseya_vsa_get_software_inventory` and
+  `kaseya_vsa_list_procedures` keep a `top` of up to 500 (default 50 and 500); they also take
+  `skip`, so a result cut to 20,000 characters continues from `next_skip`.
 - **Not included**: the device "card" UI resource of older versions (an MCP Apps HTML view); the
   tools return the same data as JSON.
 

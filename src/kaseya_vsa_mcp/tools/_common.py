@@ -40,7 +40,13 @@ NOT_CONFIGURED = error_envelope(
 )
 
 AgentId = Annotated[str, Field(description="Agent id (AgentId from kaseya_vsa_list_agents).", min_length=1)]
-ODataFilter = Annotated[str | None, Field(description="OData $filter, e.g. \"startswith(AgentName,'PC')\".")]
+ODataFilter = Annotated[
+    str | None,
+    Field(
+        description="OData $filter, e.g. \"startswith(AgentName,'PC')\". Ids such as OrgId are decimals: "
+        "write the number with an M suffix, e.g. \"OrgId eq 10158420681076233316854711M\"."
+    ),
+]
 Confirm = Annotated[bool | None, Field(description="Must be true, set only after the user approved this exact action.")]
 
 
@@ -53,7 +59,7 @@ MAX_TOP = 200
 Top = Annotated[int, Field(description=f"Records to return (default 50, max {MAX_TOP}; fetched 100 per request).", ge=1, le=MAX_TOP)]
 # For tools without skip: one call is all the caller gets, so they keep the larger maximum.
 SingleCallTop = Annotated[int, Field(description=f"Records to return (default 50, up to {MAX_TOTAL}; fetched 100 per request).", ge=1)]
-Skip = Annotated[int | None, Field(description="Records to skip.", ge=0)]
+Skip = Annotated[int | None, Field(description="Records to skip; pass next_skip from the previous result.", ge=0)]
 
 
 def result(payload: Any) -> Any:

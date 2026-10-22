@@ -29,6 +29,22 @@ _SOFTWARE = {
     "security": "software/securityproducts",
     "startup": "software/startupapps",
 }
+# Licence secrets in the licenses view: masked to their last characters unless asked for.
+_KEY_FIELDS = {"productkey", "licensecode", "licensekey"}
+_KEY_VISIBLE = 5
+
+
+def mask_keys(row: Any) -> Any:
+    """Mask product keys / license codes in one licenses row, keeping the last 5 characters."""
+    if not isinstance(row, dict):
+        return row
+    masked = dict(row)
+    for name, value in row.items():
+        if name.lower() in _KEY_FIELDS and isinstance(value, str) and value:
+            masked[name] = "*****" + (value[-_KEY_VISIBLE:] if len(value) > _KEY_VISIBLE * 2 else "")
+    return masked
+
+
 _HARDWARE = {"disk_volumes": "hardware/diskvolumes", "pci_and_disk": "hardware/pcianddisk", "printers": "hardware/printers"}
 
 
@@ -56,11 +72,22 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         agentId: AgentId,
         view: Annotated[SoftwareView, Field(description="installed applications (default), add/remove programs, licenses, security products or startup apps.")] = "installed",
         top: SingleCallTop = 50,
+        skip: Skip = None,
+        showKeys: Annotated[
+            bool | None, Field(description="licenses view: return product keys / license codes in full (masked by default).")
+        ] = None,
     ) -> str:
-        """Get an agent's software from its latest audit: installed apps, licenses, security products."""
+        """Get an agent's software from its latest audit: installed apps, licenses, security products.
+
+        Licence keys are masked to their last 5 characters unless showKeys is true.
+        """
 
         async def action(client: VsaClient) -> dict:
-            return {"agent_id": agentId, "view": view} | await fetch(client, f"assetmgmt/audit/{agentId}/{_SOFTWARE[view]}", "software", top)
+            out = await fetch(client, f"assetmgmt/audit/{agentId}/{_SOFTWARE[view]}", "software", top, skip)
+            if view == "licenses" and not showKeys:
+                out["software"] = [mask_keys(row) for row in out["software"]]
+                out["keys_masked"] = True
+            return {"agent_id": agentId, "view": view} | out
 
         return await run_tool("kaseya_vsa_get_software_inventory", client_factory, action)
 
@@ -82,12 +109,15 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
         return await run_tool("kaseya_vsa_get_hardware_inventory", client_factory, action)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def kaseya_vsa_get_patch_status(agentId: AgentId) -> str:
-        """Get an agent's patch state (installed / missing counts, last scan) and its missing patches."""
+    async def kaseya_vsa_get_patch_status(agentId: AgentId, skip: Skip = None) -> str:
+        """Get an agent's patch state (installed / missing counts, last scan) and its missing patches.
+
+        Up to 200 missing patches per call; skip (next_skip) continues the list.
+        """
 
         async def action(client: VsaClient) -> dict:
             status = result(await client.get(f"assetmgmt/patch/{agentId}/status"))
-            missing = await fetch(client, f"assetmgmt/patch/{agentId}/machineupdate/False", "missing_patches", 200)
+            missing = await fetch(client, f"assetmgmt/patch/{agentId}/machineupdate/False", "missing_patches", 200, skip)
             return {"agent_id": agentId, "status": status} | missing
 
         return await run_tool("kaseya_vsa_get_patch_status", client_factory, action)
